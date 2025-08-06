@@ -337,6 +337,8 @@ function extractAmazonResultsWithFrameInfo() {
         body { 
           background-color: #1e1e1e;
           color: #e0e0e0;
+          min-width: 600px;
+          width: 600px;
         }
         #filter-input {
           width: 100%;
@@ -379,7 +381,7 @@ function extractAmazonResultsWithFrameInfo() {
           background-color: #1e1e1e;
         }
         th, td { 
-          padding: 8px; 
+          padding: 6px 8px; 
           text-align: left; 
           border-bottom: 1px solid #333; 
         }
@@ -402,11 +404,11 @@ function extractAmazonResultsWithFrameInfo() {
         }
         .price-col { 
           text-align: right; 
-          width: 100px;
+          width: 80px;
         }
         .delivery-col {
           text-align: center;
-          width: 120px;
+          width: 70px;
           font-size: 12px;
         }
         .coupon-indicator {
