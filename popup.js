@@ -1,10 +1,12 @@
 /**
  * Main function to handle the extraction of product information from Amazon pages.
  * This function is called automatically when the popup opens and:
- * 1. Verifies we're on an Amazon page
- * 2. Injects the product extraction script
- * 3. Processes the results and displays them in the popup
- * 
+ *   1. Verifies we're on an Amazon page
+ *   2. Injects the product extraction script into the active tab
+ *   3. Processes the results and displays them in the popup
+ *
+ * This is the entry point for the extension's popup logic.
+ *
  * @async
  * @returns {void}
  */
@@ -16,7 +18,8 @@ async function handleExtract() {
     return;
   }
   try {
-    const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+  // Get the currently active tab in the current window
+  const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
     if (!tab) {
       console.error('No active tab found.');
       resultsDiv.innerText = 'No active tab found.';
@@ -28,10 +31,12 @@ async function handleExtract() {
       resultsDiv.innerText = 'Tab has no URL.';
       return;
     }
+    // Only proceed if the tab is an Amazon page
     if (!tab.url.match(/^https?:\/\/(www\.)?amazon\./)) {
       resultsDiv.innerText = 'Please navigate to an Amazon search results page.';
       return;
     }
+    // Inject the extraction function into all frames of the active tab
     chrome.scripting.executeScript({
       target: {tabId: tab.id, allFrames: true},
       func: extractAmazonResultsWithFrameInfo,
@@ -47,6 +52,7 @@ async function handleExtract() {
         resultsDiv.innerText = 'No results found or script failed.';
         return;
       }
+      // Loop through all frames' results and use the first one with valid HTML output
       let found = false;
       let output = '';
       for (const frame of results) {
@@ -57,6 +63,7 @@ async function handleExtract() {
           break;  // Use the first frame with results
         }
       }
+      // Display the extracted HTML or a message if nothing was found
       if (found) {
         resultsDiv.innerHTML = output;
       } else {
@@ -64,6 +71,7 @@ async function handleExtract() {
       }
     });
     // Warn if popup is about to close (common Chrome extension issue)
+    // This is a workaround for Chrome's popup auto-close behavior
     setTimeout(() => {
       if (!document.hasFocus()) {
         console.warn('Popup likely closed before script finished.');
@@ -75,95 +83,102 @@ async function handleExtract() {
   }
 }
 
-// Start extraction when the popup opens
+// Start extraction and set up UI when the popup opens
 /**
  * Setup function that runs when the popup is opened.
- * Initializes the UI and sets up event handlers.
- * 
+ * Initializes the UI and sets up event handlers for filtering.
+ *
  * Responsibilities:
- * 1. Hides the extract button (now automated)
- * 2. Sets up real-time filtering
- * 3. Triggers initial product extraction
+ *   1. Hides the extract button (now automated)
+ *   2. Sets up real-time filtering and delivery filter buttons
+ *   3. Triggers initial product extraction
  */
 document.addEventListener('DOMContentLoaded', () => {
-  // Hide the extract button with CSS
+  // Hide the extract button with CSS (the extension now auto-extracts)
   const style = document.createElement('style');
   style.textContent = '#extractBtn { display: none; }';
   document.head.appendChild(style);
-  
-  // Set up real-time filter functionality
+
+  // Set up real-time filter functionality for the text input
   document.addEventListener('input', (e) => {
     if (e.target && e.target.id === 'filter-input') {
       applyFilters();
     }
   });
 
-  // Set up delivery filter buttons
+  // Set up delivery filter buttons and clear button
   document.addEventListener('click', (e) => {
     if (e.target && e.target.id === 'delivery-today-filter') {
+      // Toggle 'Today' delivery filter
       e.target.classList.toggle('active');
       applyFilters();
     }
-    
+
     if (e.target && e.target.id === 'delivery-tomorrow-filter') {
+      // Toggle 'Tomorrow' delivery filter
       e.target.classList.toggle('active');
       applyFilters();
     }
-    
+
     if (e.target && e.target.id === 'clear-filters') {
-      // Clear all filters
+      // Clear all filters (text and delivery)
       const filterInput = document.getElementById('filter-input');
       const deliveryTodayFilter = document.getElementById('delivery-today-filter');
       const deliveryTomorrowFilter = document.getElementById('delivery-tomorrow-filter');
-      
+
       if (filterInput) filterInput.value = '';
       if (deliveryTodayFilter) deliveryTodayFilter.classList.remove('active');
       if (deliveryTomorrowFilter) deliveryTomorrowFilter.classList.remove('active');
-      
+
       applyFilters();
     }
   });
 
-  // Function to apply all active filters
+  /**
+   * Function to apply all active filters to the product table.
+   * Handles both text and delivery filters.
+   */
   function applyFilters() {
     const filterInput = document.getElementById('filter-input');
     const deliveryTodayFilter = document.getElementById('delivery-today-filter');
     const deliveryTomorrowFilter = document.getElementById('delivery-tomorrow-filter');
     const rows = document.querySelectorAll('.product-row');
-    
+
     const textFilter = filterInput ? filterInput.value.toLowerCase() : '';
     const deliveryTodayActive = deliveryTodayFilter ? deliveryTodayFilter.classList.contains('active') : false;
     const deliveryTomorrowActive = deliveryTomorrowFilter ? deliveryTomorrowFilter.classList.contains('active') : false;
-    
+
     rows.forEach(row => {
+      // Get the product title and delivery attributes for each row
       const title = row.querySelector('a') ? row.querySelector('a').textContent.toLowerCase() : '';
       const isDeliveryToday = row.getAttribute('data-delivery-today') === 'true';
       const isDeliveryTomorrow = row.getAttribute('data-delivery-tomorrow') === 'true';
-      
+
       let showRow = true;
-      
-      // Apply text filter
+
+      // Apply text filter (case-insensitive substring match)
       if (textFilter && !title.includes(textFilter)) {
         showRow = false;
       }
-      
+
       // Apply delivery filters (OR logic - show if matches any active delivery filter)
       if (deliveryTodayActive || deliveryTomorrowActive) {
         let matchesDeliveryFilter = false;
-        
+
         if (deliveryTodayActive && isDeliveryToday) {
           matchesDeliveryFilter = true;
         }
-        
+
         if (deliveryTomorrowActive && isDeliveryTomorrow) {
           matchesDeliveryFilter = true;
         }
-        
+
         if (!matchesDeliveryFilter) {
           showRow = false;
         }
       }
-      
+
+      // Show or hide the row based on filter results
       if (showRow) {
         row.classList.remove('hidden');
       } else {
@@ -172,7 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Automatically trigger extraction
+  // Automatically trigger extraction when popup opens
   handleExtract();
 });
 
