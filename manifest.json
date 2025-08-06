@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Amazon ListView",
+  "version": "1.0",
+  "description": "Summarize Amazon search results as a list.",
+  "permissions": ["activeTab", "scripting"],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
