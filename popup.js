@@ -94,19 +94,83 @@ document.addEventListener('DOMContentLoaded', () => {
   // Set up real-time filter functionality
   document.addEventListener('input', (e) => {
     if (e.target && e.target.id === 'filter-input') {
-      const filterText = e.target.value.toLowerCase();
-      const rows = document.querySelectorAll('.product-row');
-      
-      rows.forEach(row => {
-        const title = row.querySelector('a').textContent.toLowerCase();
-        if (title.includes(filterText)) {
-          row.classList.remove('hidden');
-        } else {
-          row.classList.add('hidden');
-        }
-      });
+      applyFilters();
     }
   });
+
+  // Set up delivery filter buttons
+  document.addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'delivery-today-filter') {
+      e.target.classList.toggle('active');
+      applyFilters();
+    }
+    
+    if (e.target && e.target.id === 'delivery-tomorrow-filter') {
+      e.target.classList.toggle('active');
+      applyFilters();
+    }
+    
+    if (e.target && e.target.id === 'clear-filters') {
+      // Clear all filters
+      const filterInput = document.getElementById('filter-input');
+      const deliveryTodayFilter = document.getElementById('delivery-today-filter');
+      const deliveryTomorrowFilter = document.getElementById('delivery-tomorrow-filter');
+      
+      if (filterInput) filterInput.value = '';
+      if (deliveryTodayFilter) deliveryTodayFilter.classList.remove('active');
+      if (deliveryTomorrowFilter) deliveryTomorrowFilter.classList.remove('active');
+      
+      applyFilters();
+    }
+  });
+
+  // Function to apply all active filters
+  function applyFilters() {
+    const filterInput = document.getElementById('filter-input');
+    const deliveryTodayFilter = document.getElementById('delivery-today-filter');
+    const deliveryTomorrowFilter = document.getElementById('delivery-tomorrow-filter');
+    const rows = document.querySelectorAll('.product-row');
+    
+    const textFilter = filterInput ? filterInput.value.toLowerCase() : '';
+    const deliveryTodayActive = deliveryTodayFilter ? deliveryTodayFilter.classList.contains('active') : false;
+    const deliveryTomorrowActive = deliveryTomorrowFilter ? deliveryTomorrowFilter.classList.contains('active') : false;
+    
+    rows.forEach(row => {
+      const title = row.querySelector('a') ? row.querySelector('a').textContent.toLowerCase() : '';
+      const isDeliveryToday = row.getAttribute('data-delivery-today') === 'true';
+      const isDeliveryTomorrow = row.getAttribute('data-delivery-tomorrow') === 'true';
+      
+      let showRow = true;
+      
+      // Apply text filter
+      if (textFilter && !title.includes(textFilter)) {
+        showRow = false;
+      }
+      
+      // Apply delivery filters (OR logic - show if matches any active delivery filter)
+      if (deliveryTodayActive || deliveryTomorrowActive) {
+        let matchesDeliveryFilter = false;
+        
+        if (deliveryTodayActive && isDeliveryToday) {
+          matchesDeliveryFilter = true;
+        }
+        
+        if (deliveryTomorrowActive && isDeliveryTomorrow) {
+          matchesDeliveryFilter = true;
+        }
+        
+        if (!matchesDeliveryFilter) {
+          showRow = false;
+        }
+      }
+      
+      if (showRow) {
+        row.classList.remove('hidden');
+      } else {
+        row.classList.add('hidden');
+      }
+    });
+  }
 
   // Automatically trigger extraction
   handleExtract();
@@ -162,8 +226,53 @@ function extractAmazonResultsWithFrameInfo() {
       const priceNum = priceStr === 'No Price' ? -1 : 
                       parseFloat(priceStr.replace('$', '').replace(/,/g, ''));
       
-      // Check for coupons using multiple possible selectors
-      // Amazon uses different classes and data attributes for coupons
+      // Extract delivery information
+      // Look for various delivery time indicators on Amazon
+      let deliveryText = '';
+      let isDeliveryToday = false;
+      let isDeliveryTomorrow = false;
+      
+      const deliverySelectors = [
+        '[data-test-id="delivery-time"]',
+        '.a-color-base.a-text-bold',
+        '.a-color-success',
+        '.a-size-base.a-color-base',
+        '[data-csa-c-type="link"][data-csa-c-content*="delivery"]'
+      ];
+      
+      for (const selector of deliverySelectors) {
+        const deliveryElem = item.querySelector(selector);
+        if (deliveryElem && deliveryElem.textContent) {
+          const text = deliveryElem.textContent.toLowerCase();
+          if (text.includes('today') || text.includes('same day') || 
+              text.includes('within') && text.includes('hour')) {
+            deliveryText = 'Today';
+            isDeliveryToday = true;
+            break;
+          } else if (text.includes('tomorrow') || text.includes('next day')) {
+            deliveryText = 'Tomorrow';
+            isDeliveryTomorrow = true;
+            break;
+          }
+        }
+      }
+      
+      // Also check the broader item text for delivery information
+      if (!isDeliveryToday && !isDeliveryTomorrow) {
+        const itemText = item.textContent.toLowerCase();
+        if (itemText.includes('get it today') || 
+            itemText.includes('delivery today') ||
+            itemText.includes('same-day delivery')) {
+          isDeliveryToday = true;
+          deliveryText = 'Today';
+        } else if (itemText.includes('get it tomorrow') || 
+                   itemText.includes('delivery tomorrow') ||
+                   itemText.includes('next-day delivery') ||
+                   itemText.includes('1-day delivery')) {
+          isDeliveryTomorrow = true;
+          deliveryText = 'Tomorrow';
+        }
+      }
       const couponElem = item.querySelector('.s-coupon-unclipped') || 
                         item.querySelector('[data-csa-c-element-type="coupon"]');
       let couponAmount = null;
@@ -212,13 +321,16 @@ function extractAmazonResultsWithFrameInfo() {
           url: urlElem.href,
           price: finalPrice,
           priceNum: finalPriceNum,
-          hasCoupon: !!couponElem
+          hasCoupon: !!couponElem,
+          deliveryText: deliveryText,
+          isDeliveryToday: isDeliveryToday,
+          isDeliveryTomorrow: isDeliveryTomorrow
         });
       }
     }
     
-    // Sort items by price (highest to lowest)
-    processedItems.sort((a, b) => b.priceNum - a.priceNum);
+    // Sort items by price (lowest to highest)
+    processedItems.sort((a, b) => a.priceNum - b.priceNum);
     
     let html = `
       <style>
@@ -239,6 +351,27 @@ function extractAmazonResultsWithFrameInfo() {
         #filter-input:focus {
           outline: none;
           border-color: #89CFF0;
+        }
+        .filter-controls {
+          margin-bottom: 10px;
+          display: flex;
+          gap: 10px;
+          align-items: center;
+        }
+        .delivery-filter {
+          background-color: #2d2d2d;
+          border: 1px solid #444;
+          color: #e0e0e0;
+          padding: 5px 10px;
+          border-radius: 4px;
+          cursor: pointer;
+        }
+        .delivery-filter:hover {
+          background-color: #3d3d3d;
+        }
+        .delivery-filter.active {
+          background-color: #4CAF50;
+          border-color: #4CAF50;
         }
         table { 
           border-collapse: collapse; 
@@ -271,6 +404,11 @@ function extractAmazonResultsWithFrameInfo() {
           text-align: right; 
           width: 100px;
         }
+        .delivery-col {
+          text-align: center;
+          width: 120px;
+          font-size: 12px;
+        }
         .coupon-indicator {
           display: inline-block;
           width: 12px;
@@ -286,18 +424,25 @@ function extractAmazonResultsWithFrameInfo() {
         }
       </style>
       <input type="text" id="filter-input" placeholder="Filter products...">
+      <div class="filter-controls">
+        <button id="delivery-today-filter" class="delivery-filter">Del. Today</button>
+        <button id="delivery-tomorrow-filter" class="delivery-filter">Del. Tomorrow</button>
+        <button id="clear-filters" class="delivery-filter">Clear Filters</button>
+      </div>
       <table>
         <thead>
           <tr>
             <th>Product</th>
+            <th class="delivery-col">Delivery</th>
             <th class="price-col">Price</th>
           </tr>
         </thead>
         <tbody id="product-list">
-    `;      for (const item of processedItems) {
+    `;    for (const item of processedItems) {
       html += `
-        <tr class="product-row">
+        <tr class="product-row" data-delivery-today="${item.isDeliveryToday}" data-delivery-tomorrow="${item.isDeliveryTomorrow}">
           <td>${item.hasCoupon ? '<span class="coupon-indicator" title="Coupon Available"></span>' : ''}<a href="${item.url}" target="_blank">${item.title}</a></td>
+          <td class="delivery-col" style="color: #4CAF50;">${item.deliveryText || '-'}</td>
           <td class="price-col ${item.hasCoupon ? 'coupon-price' : ''}">
             ${item.price}
           </td>
